@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>BCR Load Test Client</title>
+</head>
+<body>
+    <h1>BCR Load Test Client</h1>
+    <div id="status">Initializing...</div>
+    <div id="client-id"></div>
+
+    <script type="module">
+        import * as wasm from './node_modules/@bitcredit/bcr-ebill-wasm/index.js';
+
+        const params = new URLSearchParams(window.location.search);
+        const clientId = params.get('id') || 'unknown';
+        document.getElementById('client-id').textContent = `Client ID: ${clientId}`;
+
+        window.bcrClient = {
+            id: clientId,
+            api: null,
+            status: 'initializing',
+            error: null,
+            logs: [],
+
+            async exportIndexedDB() {
+                const databases = await indexedDB.databases();
+                const result = {};
+                for (const dbInfo of databases) {
+                    const db = await new Promise((resolve, reject) => {
+                        const req = indexedDB.open(dbInfo.name);
+                        req.onerror = () => reject(req.error);
+                        req.onsuccess = () => resolve(req.result);
+                    });
+                    const dbData = { version: db.version, stores: {} };
+                    for (const storeName of db.objectStoreNames) {
+                        const tx = db.transaction(storeName, 'readonly');
+                        const store = tx.objectStore(storeName);
+                        const records = [];
+                        await new Promise((resolve, reject) => {
+                            const cursor = store.openCursor();
+                            cursor.onerror = () => reject(cursor.error);
+                            cursor.onsuccess = (e) => {
+                                const result = e.target.result;
+                                if (result) {
+                                    records.push({ key: result.key, value: result.value });
+                                    result.continue();
+                                } else {
+                                    resolve();
+                                }
+                            };
+                        });
+                        dbData.stores[storeName] = {
+                            keyPath: store.keyPath,
+                            autoIncrement: store.autoIncrement,
+                            records: records
+                        };
+                    }
+                    result[dbInfo.name] = dbData;
+                    db.close();
+                }
+                return result;
+            },
+
+            async importIndexedDB(data) {
+                for (const [dbName, dbData] of Object.entries(data)) {
+                    const existing = await indexedDB.databases().then(dbs => dbs.find(d => d.name === dbName));
+                    if (existing) {
+                        await new Promise((resolve, reject) => {
+                            const req = indexedDB.deleteDatabase(dbName);
+                            req.onerror = () => reject(req.error);
+                            req.onsuccess = () => resolve();
+                        });
+                    }
+                    const db = await new Promise((resolve, reject) => {
+                        const req = indexedDB.open(dbName, dbData.version);
+                        req.onerror = () => reject(req.error);
+                        req.onupgradeneeded = (e) => {
+                            const db = e.target.result;
+                            for (const [storeName, storeInfo] of Object.entries(dbData.stores)) {
+                                if (!db.objectStoreNames.contains(storeName)) {
+                                    const options = {};
+                                    if (storeInfo.keyPath) options.keyPath = storeInfo.keyPath;
+                                    if (storeInfo.autoIncrement) options.autoIncrement = true;
+                                    db.createObjectStore(storeName, options);
+                                }
+                            }
+                        };
+                        req.onsuccess = () => resolve(req.result);
+                    });
+                    for (const [storeName, storeInfo] of Object.entries(dbData.stores)) {
+                        if (!db.objectStoreNames.contains(storeName)) {
+                            db.close();
+                            throw new Error(`Store ${storeName} not found in DB ${dbName}`);
+                        }
+                        const tx = db.transaction(storeName, 'readwrite');
+                        const store = tx.objectStore(storeName);
+                        for (const record of storeInfo.records) {
+                            await new Promise((resolve, reject) => {
+                                let req;
+                                if (store.keyPath || store.autoIncrement) {
+                                    req = store.put(record.value);
+                                } else {
+                                    req = store.put(record.value, record.key);
+                                }
+                                req.onerror = () => reject(req.error);
+                                req.onsuccess = () => resolve();
+                            });
+                        }
+                    }
+                    db.close();
+                }
+            },
+
+            async clearIndexedDB() {
+                const databases = await indexedDB.databases();
+                for (const dbInfo of databases) {
+                    await new Promise((resolve, reject) => {
+                        const req = indexedDB.deleteDatabase(dbInfo.name);
+                        req.onerror = () => reject(req.error);
+                        req.onsuccess = () => resolve();
+                    });
+                }
+            }
+        };
+
+        function log(level, message) {
+            const entry = { time: Date.now(), level, message };
+            window.bcrClient.logs.push(entry);
+            console.log(`[${clientId}] ${message}`);
+        }
+
+        async function init() {
+            try {
+                const config = {
+                    app_url: "http://localhost",
+                    bitcoin_network: "testnet",
+                    esplora_base_url: "https://esplora.minibill.tech",
+                    nostr_relays: ["wss://relay.wildcat0.clowder-dev.minibill.tech"],
+                    surreal_db_connection: "indxdb://default",
+                    job_runner_initial_delay_seconds: 1,
+                    job_runner_check_interval_seconds: 60,
+                    default_mint_url: "https://mint.example.com",
+                    default_mint_node_id: "bitcrt02d97ba58d3b19f7888277c3f25202f0702a3581d7ee4a74242d21496130a973c6",
+                    num_confirmations_for_payment: 1,
+                    dev_mode: true,
+                    mandatory_email_confirmations: false,
+                    default_court_url: "https://court.example.com",
+                };
+
+                await wasm.default();
+                await wasm.initialize_api(config);
+
+                window.bcrClient.api = wasm.Api;
+                window.bcrClient.status = 'ready';
+                document.getElementById('status').textContent = 'Ready';
+                log('info', 'WASM API initialized');
+            } catch (e) {
+                window.bcrClient.status = 'error';
+                window.bcrClient.error = e.message || String(e);
+                document.getElementById('status').textContent = `Error: ${window.bcrClient.error}`;
+                log('error', `Initialization failed: ${window.bcrClient.error}`);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

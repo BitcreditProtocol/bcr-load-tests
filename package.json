@@ -1,0 +1,23 @@
+{
+  "name": "bcr-load-test",
+  "version": "0.1.0",
+  "description": "Load testing harness for Bitcredit E-Bill WASM clients using Playwright",
+  "main": "orchestrator.js",
+  "type": "module",
+  "scripts": {
+    "start": "node orchestrator.js",
+    "serve": "http-server -p 8080 -c-1",
+    "test:single": "node test-single.js"
+  },
+  "dependencies": {
+    "@bitcredit/bcr-ebill-wasm": "^0.3.0",
+    "fake-indexeddb": "^6.0.0",
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
