@@ -1,3 +1,6 @@
 node_modules/
 package-lock.json
 *.log
+storage/
+heavy-account.json
+accounts.json
