@@ -874,6 +874,80 @@ export class LoadTestHarness {
     console.log(`[${clientId}] Bills sync timeout`);
     return false;
   }
+
+  async getBillIds(client) {
+    const bills = await this.getBills(client);
+    return bills.map(bill => bill.id).sort();
+  }
+
+  async getBillIdSet(client) {
+    const billIds = await this.getBillIds(client);
+    return new Set(billIds);
+  }
+
+  async waitForBillIds(client, expectedIds, timeoutMs = 120000, pollIntervalMs = 1000) {
+    const { clientId } = client;
+    const expectedSet = new Set(expectedIds);
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const billIdSet = await this.getBillIdSet(client);
+      const missing = [...expectedSet].filter(id => !billIdSet.has(id));
+      if (missing.length === 0) {
+        return { synced: true, syncMs: Date.now() - start, missing: [] };
+      }
+      await sleep(pollIntervalMs);
+    }
+    const billIdSet = await this.getBillIdSet(client);
+    const missing = [...expectedSet].filter(id => !billIdSet.has(id));
+    console.log(`[${clientId}] Timeout waiting for bill IDs, missing ${missing.length}`);
+    return { synced: false, syncMs: Date.now() - start, missing };
+  }
+
+  async exportIndexedDB(client) {
+    const { page, clientId } = client;
+    const result = await page.evaluate(async () => {
+      if (typeof window.bcrClient?.exportIndexedDB !== 'function') {
+        throw new Error('window.bcrClient.exportIndexedDB is not available');
+      }
+      return await window.bcrClient.exportIndexedDB();
+    });
+    return result;
+  }
+
+  async getIndexedDBSummary(client) {
+    const exportData = await this.exportIndexedDB(client);
+    const summary = {};
+    for (const [dbName, dbData] of Object.entries(exportData)) {
+      const stores = {};
+      for (const [storeName, storeInfo] of Object.entries(dbData.stores)) {
+        stores[storeName] = storeInfo.records ? storeInfo.records.length : 0;
+      }
+      summary[dbName] = { version: dbData.version, stores };
+    }
+    return summary;
+  }
+
+  async takeStateSnapshot(client, label = 'snapshot') {
+    const { clientId } = client;
+    const takenAt = Date.now();
+    const [billIds, dbSummary] = await Promise.all([
+      this.getBillIds(client),
+      this.getIndexedDBSummary(client),
+    ]);
+    const snapshot = { label, takenAt, billIds, dbSummary };
+    if (!client.snapshots) {
+      client.snapshots = [];
+    }
+    client.snapshots.push(snapshot);
+    console.log(`[${clientId}] Snapshot '${label}' taken: ${billIds.length} bills, ${Object.keys(dbSummary).length} DB(s)`);
+    return snapshot;
+  }
+
+  async setNetworkEnabled(client, enabled) {
+    const { clientId } = client;
+    await client.context.setOffline(!enabled);
+    console.log(`[${clientId}] Network ${enabled ? 'enabled' : 'disabled'}`);
+  }
 }
 
 function parseArgs() {
