@@ -11,7 +11,7 @@
     "test:reconnect": "node scenario-reconnect-catchup.js --publishers=2 --observers=2 --publish-duration=60 --offline-duration=15"
   },
   "dependencies": {
-    "@bitcredit/bcr-ebill-wasm": "^0.3.0",
+    "@bitcredit/bcr-ebill-wasm": "^0.5",
     "fake-indexeddb": "^6.0.0",
     "playwright": "^1.40.0"
   },
