@@ -17,6 +17,12 @@ if (!fs.existsSync(STORAGE_DIR)) {
 function serveStatic(req, res) {
   const urlPath = req.url.split('?')[0];
   let filePath = path.join(__dirname, urlPath === '/' ? 'index.html' : urlPath);
+  // A raw request path can climb out with `..`; serve only files inside the harness directory.
+  if (!filePath.startsWith(__dirname + path.sep)) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
   const ext = path.extname(filePath).toLowerCase();
   const mimeTypes = {
     '.html': 'text/html',
@@ -119,7 +125,8 @@ export class LoadTestHarness {
           reject(err);
         }
       });
-      this.server.listen(port, () => {
+      // Only the harness's own browser loads these pages, and accounts.json with seed phrases sits beside them.
+      this.server.listen(port, '127.0.0.1', () => {
         this.port = this.server.address().port;
         resolve(true);
       });
