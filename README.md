@@ -1,6 +1,6 @@
 # BCR Load Test
 
-Load testing harness for the Bitcredit E-Bill WASM client.
+Load testing harness for the Bitcredit eBills WASM client.
 It uses Playwright to drive multiple headless Chromium instances,
 each running the real WASM client in its own isolated browser context.
 

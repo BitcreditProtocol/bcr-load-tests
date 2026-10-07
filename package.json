@@ -1,7 +1,7 @@
 {
   "name": "bcr-load-test",
   "version": "0.1.0",
-  "description": "Load testing harness for Bitcredit E-Bill WASM clients using Playwright",
+  "description": "Load testing harness for Bitcredit eBills WASM clients using Playwright",
   "main": "orchestrator.js",
   "type": "module",
   "scripts": {
